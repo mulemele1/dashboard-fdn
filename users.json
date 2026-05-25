@@ -1,0 +1,17 @@
+{
+  "admin_fdn": {
+    "password_hash": "d806763223476271ad143953b122e0d76ca24ae95820f6e64b7b83195831415e",
+    "name": "Administrador FDN",
+    "role": "admin"
+  },
+  "supervisor": {
+    "password_hash": "04b4b063c2038952abec8e274f99a6b9a964642d3cf5e98707aae82148f29f05",
+    "name": "Supervisor",
+    "role": "supervisor"
+  },
+  "visualizador": {
+    "password_hash": "9f9f20ec6958d3c176c17ea3eb9731b053b6fc753367e3c25e3fb2578ec0f4e6",
+    "name": "Visualizador",
+    "role": "viewer"
+  }
+}
