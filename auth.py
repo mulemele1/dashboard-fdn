@@ -11,6 +11,22 @@ from datetime import datetime
 DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
 
 # ============================================
+# FUNÇÃO COMPATÍVEL DE RERUN
+# ============================================
+def safe_rerun():
+    """Compatível com versões antigas e novas do Streamlit"""
+    if hasattr(st, 'rerun'):
+        st.rerun()
+    elif hasattr(st, 'experimental_rerun'):
+        st.experimental_rerun()
+    else:
+        # Se nenhum existir, recarregar a página via JavaScript
+        st.markdown(
+            '<meta http-equiv="refresh" content="0">',
+            unsafe_allow_html=True
+        )
+
+# ============================================
 # BASE DE DADOS
 # ============================================
 
@@ -97,7 +113,7 @@ def logout():
     for key in ["authenticated", "user_id", "user_name", "user_role", "username"]:
         if key in st.session_state:
             del st.session_state[key]
-    st.rerun()
+    safe_rerun()
 
 # ============================================
 # FORMULÁRIO DE LOGIN
@@ -183,6 +199,140 @@ def login_form():
         </p>
         """, unsafe_allow_html=True)
 
+    """Mostra formulário de login"""
+    init_db()
+    
+    # CSS do login - sem sidebar
+    st.markdown("""
+    <style>
+        /* Esconder completamente a sidebar */
+        [data-testid="collapsedControl"] {
+            display: none !important;
+        }
+        section[data-testid="stSidebar"] {
+            display: none !important;
+        }
+        
+        /* Esconder o header padrão do Streamlit */
+        header {
+            display: none !important;
+        }
+        
+        /* Remover padding para usar espaço total */
+        .main > div {
+            padding: 0rem !important;
+        }
+        
+        /* Centralizar o conteúdo */
+        .stApp {
+            background: linear-gradient(135deg, #f0f4f8 0%, #e0e8f0 100%);
+        }
+        
+        /* Container do login */
+        .login-container {
+            max-width: 420px;
+            margin: 0 auto;
+            padding: 2.5rem;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(26,95,122,0.2);
+        }
+        
+        .login-logo {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .login-logo h1 {
+            color: #1a5f7a;
+            font-size: 2.2rem;
+            margin: 0;
+        }
+        
+        .login-logo p {
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+        
+        .stButton>button {
+            width: 100%;
+            background: linear-gradient(135deg, #1a5f7a, #0d3b4a);
+            color: white;
+            border: none;
+            padding: 0.7rem;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: bold;
+            margin-top: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .stButton>button:hover {
+            background: linear-gradient(135deg, #0d3b4a, #1a5f7a);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(26,95,122,0.3);
+        }
+        
+        .stTextInput > div > div > input {
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            padding: 0.7rem;
+        }
+        
+        .stTextInput > div > div > input:focus {
+            border-color: #1a5f7a;
+            box-shadow: 0 0 0 2px rgba(26,95,122,0.2);
+        }
+        
+        hr {
+            margin: 1rem 0;
+        }
+        
+        /* Footer */
+        .login-footer {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 1.5rem;
+        }
+    </style>
+    
+    <div style="display: flex; justify-content: center; align-items: center; min-height: 100vh;">
+        <div class="login-container">
+            <div class="login-logo">
+                <h1>📊 FDN</h1>
+                <p>Dashboard de Progresso dos Levantamentos</p>
+                <hr>
+            </div>
+    """, unsafe_allow_html=True)
+    
+    username = st.text_input("👤 Utilizador", placeholder="username", key="login_user")
+    password = st.text_input("🔒 Password", type="password", placeholder="••••••••", key="login_pass")
+    
+    if st.button("Entrar", key="login_btn"):
+        if not username or not password:
+            st.error("Preencha o utilizador e a password.")
+        else:
+            user = authenticate(username, password)
+            if user:
+                st.session_state.authenticated = True
+                st.session_state.user_id = user["id"]
+                st.session_state.user_name = user["name"]
+                st.session_state.user_role = user["role"]
+                st.session_state.username = user["username"]
+                safe_rerun()
+            else:
+                st.error("❌ Utilizador ou password incorrectos.")
+    
+    st.markdown("""
+            <div class="login-footer">
+                FDN © 2026 | Acesso Restrito
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ============================================
 # PAINEL DE ADMIN
 # ============================================
@@ -223,7 +373,7 @@ def admin_panel():
                                     conn.commit()
                                     conn.close()
                                     st.success("Utilizador desactivado.")
-                                    st.rerun()
+                                    safe_rerun()
                             else:
                                 if st.button(f"🟢 Activar", key=f"act_{u['id']}"):
                                     conn = get_db()
@@ -231,7 +381,7 @@ def admin_panel():
                                     conn.commit()
                                     conn.close()
                                     st.success("Utilizador activado.")
-                                    st.rerun()
+                                    safe_rerun()
                             
                             if st.button(f"🗑️ Eliminar", key=f"del_{u['id']}"):
                                 conn = get_db()
@@ -239,7 +389,7 @@ def admin_panel():
                                 conn.commit()
                                 conn.close()
                                 st.success("Utilizador eliminado.")
-                                st.rerun()
+                                safe_rerun()
                         else:
                             st.info("ℹ️ Não pode desactivar ou eliminar o próprio admin.")
     
@@ -279,7 +429,7 @@ def admin_panel():
                     conn.commit()
                     conn.close()
                     st.success(f"✅ Utilizador '{new_username}' criado com sucesso!")
-                    st.rerun()
+                    safe_rerun()
                 except sqlite3.IntegrityError:
                     st.error(f"❌ O username '{new_username}' já existe.")
     
