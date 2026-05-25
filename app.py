@@ -66,7 +66,7 @@ DISTRICT_TARGETS = {
 # ============================================
 # FUNÇÕES DE CARREGAMENTO
 # ============================================
-@st.cache_data(ttl=300)
+@st.cache(allow_output_mutation=True)
 def load_caf1():
     """Carrega CAF Parte 1"""
     file_path = os.path.join(DATA_DIR, "results-survey666877.csv")
@@ -77,7 +77,7 @@ def load_caf1():
     df = df[df['Data de submissão'].notna()]
     return df
 
-@st.cache_data(ttl=300)
+@st.cache(allow_output_mutation=True)
 def load_caf2():
     """Carrega CAF Parte 2"""
     file_path = os.path.join(DATA_DIR, "results-survey163198.csv")
@@ -88,7 +88,7 @@ def load_caf2():
     df = df[df['Data de submissão'].notna()]
     return df
 
-@st.cache_data(ttl=300)
+@st.cache(allow_output_mutation=True)
 def load_maf():
     """Carrega MAF"""
     file_path = os.path.join(DATA_DIR, "results-survey757779.csv")
@@ -248,7 +248,7 @@ if not daily_progress.empty:
         height=400
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
 else:
     st.info("Sem dados diários disponíveis")
 
@@ -271,7 +271,7 @@ if not tech_counts.empty:
         text='Total'
     )
     fig.update_traces(textposition='outside')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
 
 # ============================================
 # GRÁFICO 3: Distritos
@@ -302,13 +302,12 @@ if not district_df.empty:
         height=400
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
     
     # Tabela
     st.dataframe(
         district_df.style.format({'Percentual': '{:.1f}%'}),
-        use_container_width=True,
-        hide_index=True
+        
     )
 
 # ============================================
@@ -328,7 +327,7 @@ if gender_col in caf1_df.columns:
         title="Distribuição por Sexo",
         color_discrete_sequence=['#1a5f7a', '#4aa3c2']
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
 
 # ============================================
 # Tabela de Dados
@@ -338,7 +337,7 @@ st.subheader("📋 Últimas Submissões")
 if not caf1_df.empty:
     display_df = caf1_df[['Data de submissão', 'Nome do Inquirido?', 'Qual é o nome do Chefe do Agregado Familiar?', 'Em que Distrito está a realizar o levantamento??']].copy()
     display_df.columns = ['Data', 'Técnico', 'Chefe do Agregado', 'Distrito']
-    st.dataframe(display_df.head(20), use_container_width=True, hide_index=True)
+    st.dataframe(display_df.head(20))
 
 # ============================================
 # RODAPÉ
