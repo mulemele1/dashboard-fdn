@@ -1,218 +1,310 @@
 """
-Gestão de utilizadores do Dashboard FdN
-Níveis de acesso:
-  - superadmin : Vê tudo, gere utilizadores
-  - admin      : Vê todos os inquéritos, estatísticas completas
-  - viewer     : Vê apenas resumo geral (sem dados pessoais)
+auth.py - Sistema de Autenticação FDN Dashboard
+Compatível com Streamlit antigo (Python 3.6)
 """
-
-import bcrypt
-import json
+import streamlit as st
+import sqlite3
+import hashlib
 import os
-import re
-import logging
 from datetime import datetime
 
-USERS_FILE = "users_db.json"
+DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
 
-# Configurar logging
-logging.basicConfig(
-    filename='dashboard_audit.log',
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)s | %(message)s'
-)
+# ============================================
+# BASE DE DADOS
+# ============================================
 
-# Utilizadores de demonstração
-DEFAULT_USERS = {
-    "admin_fdn": {
-        "password_hash": bcrypt.hashpw(b"Admin@FdN2026", bcrypt.gensalt()).decode(),
-        "full_name": "Administrador FdN",
-        "role": "superadmin",
-        "email": "admin@fdn.escaleno.co.mz",
-        "active": True,
-        "created_at": datetime.now().isoformat()
-    },
-    "gestor": {
-        "password_hash": bcrypt.hashpw(b"Gestor@2026", bcrypt.gensalt()).decode(),
-        "full_name": "Gestor de Projecto",
-        "role": "admin",
-        "email": "gestor@fdn.escaleno.co.mz",
-        "active": True,
-        "created_at": datetime.now().isoformat()
-    },
-    "visualizador": {
-        "password_hash": bcrypt.hashpw(b"Viewer@2026", bcrypt.gensalt()).decode(),
-        "full_name": "Visualizador",
-        "role": "viewer",
-        "email": "viewer@fdn.escaleno.co.mz",
-        "active": True,
-        "created_at": datetime.now().isoformat()
+def get_db():
+    """Retorna conexão à base de dados SQLite"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Cria tabelas se não existirem e adiciona admin por defeito"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Criar tabela
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            last_login TEXT
+        )
+    """)
+    conn.commit()
+    
+    # Verificar se admin existe ANTES de tentar inserir
+    c.execute("SELECT id FROM users WHERE username = 'admin'")
+    admin_exists = c.fetchone()
+    
+    # Criar admin por defeito se não existir
+    if not admin_exists:
+        try:
+            c.execute("""
+                INSERT INTO users (username, password_hash, name, role, active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                "admin",
+                hash_password("admin123"),
+                "Administrador",
+                "admin",
+                1,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            # Já existe, ignorar
+            pass
+    
+    conn.close()
+
+def hash_password(password):
+    """Hash SHA-256 da password"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# ============================================
+# AUTENTICAÇÃO
+# ============================================
+
+def authenticate(username, password):
+    """Verifica credenciais. Retorna utilizador ou None."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT * FROM users
+        WHERE username = ? AND password_hash = ? AND active = 1
+    """, (username.strip(), hash_password(password)))
+    user = c.fetchone()
+    
+    if user:
+        # Actualizar último login
+        c.execute("UPDATE users SET last_login = ? WHERE id = ?",
+                  (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
+        conn.commit()
+    
+    conn.close()
+    return user
+
+def logout():
+    """Limpa sessão"""
+    for key in ["authenticated", "user_id", "user_name", "user_role", "username"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.rerun()
+
+# ============================================
+# FORMULÁRIO DE LOGIN
+# ============================================
+
+def login_form():
+    """Mostra formulário de login"""
+    init_db()
+    
+    # CSS do login
+    st.markdown("""
+    <style>
+    body { background-color: #f0f4f8; }
+    .login-container {
+        max-width: 400px;
+        margin: 4rem auto;
+        padding: 2.5rem;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(26,95,122,0.15);
     }
-}
-
-ROLE_LABELS = {
-    "superadmin": "Super Admin",
-    "admin": "Administrador",
-    "viewer": "Visualizador"
-}
-
-ROLE_PERMISSIONS = {
-    "superadmin": ["view_summary", "view_details", "view_map", "view_responses", "manage_users", "export_data"],
-    "admin":      ["view_summary", "view_details", "view_map", "view_responses", "export_data"],
-    "viewer":     ["view_summary", "view_map"]
-}
-
-
-def _load_users():
-    """Carrega utilizadores do ficheiro JSON"""
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    # Primeira execução: criar ficheiro com users padrão
-    _save_users(DEFAULT_USERS)
-    return DEFAULT_USERS
-
-
-def _save_users(users: dict):
-    """Guarda utilizadores no ficheiro JSON"""
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2, ensure_ascii=False)
-
-
-def log_action(username: str, action: str, details: str = ""):
-    """Regista acções para auditoria"""
-    logging.info(f"{username} | {action} | {details}")
-
-
-def validate_email(email: str) -> bool:
-    """Valida formato de email"""
-    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-    return re.match(pattern, email) is not None
-
-
-def validate_username(username: str) -> bool:
-    """Valida formato do username (3-20 caracteres, letras/números/underscore)"""
-    return re.match(r'^[a-zA-Z0-9_]{3,20}$', username) is not None
-
-
-def authenticate(username: str, password: str):
-    """
-    Verifica credenciais. Devolve o dict do utilizador ou None.
-    """
-    users = _load_users()
-    user = users.get(username)
-    if not user or not user.get("active", True):
-        return None
-    if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
-        log_action(username, "LOGIN_SUCESSO", "Login realizado com sucesso")
-        return {**user, "username": username}
-    log_action(username, "LOGIN_FALHOU", "Tentativa de login falhou")
-    return None
-
-
-def has_permission(user: dict, permission: str) -> bool:
-    """Verifica se o utilizador tem determinada permissão"""
-    if not user:
-        return False
-    role = user.get("role", "viewer")
-    return permission in ROLE_PERMISSIONS.get(role, [])
-
-
-def get_all_users():
-    """Retorna lista de todos os utilizadores"""
-    users = _load_users()
-    return [{"username": k, **v} for k, v in users.items()]
-
-
-def add_user(username: str, password: str, full_name: str, role: str, email: str, current_user=None) -> bool:
-    """Adiciona novo utilizador (apenas superadmin)"""
-    if current_user and current_user.get("role") != "superadmin":
-        log_action(current_user.get("username", "unknown"), "ADD_USER_FALHOU", "Permissão negada")
-        return False
-    
-    if not validate_username(username):
-        log_action(current_user.get("username", "unknown"), "ADD_USER_FALHOU", f"Username inválido: {username}")
-        return False
-    
-    if not validate_email(email):
-        log_action(current_user.get("username", "unknown"), "ADD_USER_FALHOU", f"Email inválido: {email}")
-        return False
-    
-    users = _load_users()
-    if username in users:
-        return False
-    
-    users[username] = {
-        "password_hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
-        "full_name": full_name,
-        "role": role,
-        "email": email,
-        "active": True,
-        "created_at": datetime.now().isoformat()
+    .login-logo {
+        text-align: center;
+        margin-bottom: 1.5rem;
     }
-    _save_users(users)
-    log_action(current_user.get("username", "system"), "ADD_USER_SUCESSO", f"Utilizador {username} criado")
-    return True
-
-
-def update_user(username: str, **kwargs) -> bool:
-    """Actualiza dados de um utilizador"""
-    users = _load_users()
-    if username not in users:
-        return False
+    .login-logo h1 {
+        color: #1a5f7a;
+        font-size: 2rem;
+        margin: 0;
+    }
+    .login-logo p {
+        color: #666;
+        font-size: 0.9rem;
+    }
+    .stButton>button {
+        width: 100%;
+        background: linear-gradient(135deg, #1a5f7a, #0d3b4a);
+        color: white;
+        border: none;
+        padding: 0.6rem;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: bold;
+        margin-top: 0.5rem;
+    }
+    .stButton>button:hover {
+        background: linear-gradient(135deg, #0d3b4a, #1a5f7a);
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
-    allowed_fields = ["full_name", "email", "role"]
-    for field, value in kwargs.items():
-        if field in allowed_fields:
-            users[username][field] = value
-    
-    _save_users(users)
-    return True
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("""
+        <div class="login-logo">
+            <h1>📊 FDN</h1>
+            <p>Dashboard de Progresso dos Levantamentos</p>
+            <hr style="border-color:#1a5f7a33; margin: 1rem 0;">
+        </div>
+        """, unsafe_allow_html=True)
+        
+        username = st.text_input("👤 Utilizador", placeholder="username", key="login_user")
+        password = st.text_input("🔒 Password", type="password", placeholder="••••••••", key="login_pass")
+        
+        if st.button("Entrar", key="login_btn"):
+            if not username or not password:
+                st.error("Preencha o utilizador e a password.")
+            else:
+                user = authenticate(username, password)
+                if user:
+                    st.session_state.authenticated = True
+                    st.session_state.user_id = user["id"]
+                    st.session_state.user_name = user["name"]
+                    st.session_state.user_role = user["role"]
+                    st.session_state.username = user["username"]
+                    st.rerun()
+                else:
+                    st.error("❌ Utilizador ou password incorrectos.")
+        
+        st.markdown("""
+        <p style="text-align:center; font-size:0.75rem; color:#999; margin-top:1.5rem;">
+            FDN © 2026 | Acesso Restrito
+        </p>
+        """, unsafe_allow_html=True)
 
+# ============================================
+# PAINEL DE ADMIN
+# ============================================
 
-def update_user_password(username: str, new_password: str, current_user=None) -> bool:
-    """Actualiza password de um utilizador"""
-    if current_user and current_user.get("role") != "superadmin" and current_user.get("username") != username:
-        log_action(current_user.get("username", "unknown"), "UPDATE_PASS_FALHOU", f"Permissão negada para {username}")
-        return False
+def admin_panel():
+    """Painel de gestão de utilizadores — só para admins"""
+    if st.session_state.get("user_role") != "admin":
+        st.error("Acesso negado.")
+        return
     
-    users = _load_users()
-    if username not in users:
-        return False
+    init_db()
+    st.markdown("## ⚙️ Gestão de Utilizadores")
     
-    users[username]["password_hash"] = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-    _save_users(users)
-    log_action(current_user.get("username", "system"), "UPDATE_PASS_SUCESSO", f"Password actualizada para {username}")
-    return True
-
-
-def toggle_user_active(username: str, current_user=None) -> bool:
-    """Activa/desactiva um utilizador"""
-    if current_user and current_user.get("role") != "superadmin":
-        log_action(current_user.get("username", "unknown"), "TOGGLE_USER_FALHOU", f"Permissão negada para {username}")
-        return False
+    tabs = st.tabs(["👥 Utilizadores", "➕ Novo Utilizador", "🔑 Alterar Password"])
     
-    users = _load_users()
-    if username not in users or username == current_user.get("username"):
-        return False
+    # ── Tab 1: Lista de utilizadores ──────────────────────
+    with tabs[0]:
+        conn = get_db()
+        users = conn.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+        conn.close()
+        
+        if not users:
+            st.info("Sem utilizadores registados.")
+        else:
+            for u in users:
+                with st.expander(f"{'🟢' if u['active'] else '🔴'} {u['name']} ({u['username']}) — {u['role']}"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"**Criado:** {u['created_at']}")
+                        st.write(f"**Último login:** {u['last_login'] or 'Nunca'}")
+                    with col2:
+                        # Não permitir desactivar/eliminar o próprio admin
+                        if u["username"] != "admin" or u["id"] != st.session_state.user_id:
+                            if u["active"]:
+                                if st.button(f"🔴 Desactivar", key=f"deact_{u['id']}"):
+                                    conn = get_db()
+                                    conn.execute("UPDATE users SET active = 0 WHERE id = ?", (u["id"],))
+                                    conn.commit()
+                                    conn.close()
+                                    st.success("Utilizador desactivado.")
+                                    st.rerun()
+                            else:
+                                if st.button(f"🟢 Activar", key=f"act_{u['id']}"):
+                                    conn = get_db()
+                                    conn.execute("UPDATE users SET active = 1 WHERE id = ?", (u["id"],))
+                                    conn.commit()
+                                    conn.close()
+                                    st.success("Utilizador activado.")
+                                    st.rerun()
+                            
+                            if st.button(f"🗑️ Eliminar", key=f"del_{u['id']}"):
+                                conn = get_db()
+                                conn.execute("DELETE FROM users WHERE id = ?", (u["id"],))
+                                conn.commit()
+                                conn.close()
+                                st.success("Utilizador eliminado.")
+                                st.rerun()
+                        else:
+                            st.info("ℹ️ Não pode desactivar ou eliminar o próprio admin.")
     
-    users[username]["active"] = not users[username].get("active", True)
-    _save_users(users)
-    status = "ativado" if users[username]["active"] else "desativado"
-    log_action(current_user.get("username", "system"), "TOGGLE_USER_SUCESSO", f"Utilizador {username} {status}")
-    return True
-
-
-def delete_user(username: str, current_user=None) -> bool:
-    """Remove um utilizador (apenas superadmin, não pode remover a si próprio)"""
-    if current_user and current_user.get("role") != "superadmin":
-        return False
+    # ── Tab 2: Novo utilizador ─────────────────────────────
+    with tabs[1]:
+        st.markdown("### Criar novo utilizador")
+        new_name = st.text_input("Nome completo", key="new_name")
+        new_username = st.text_input("Username", key="new_username")
+        new_password = st.text_input("Password", type="password", key="new_password")
+        new_role = st.selectbox("Perfil", ["viewer", "tecnico", "admin"], key="new_role")
+        
+        role_info = {
+            "viewer": "Pode ver todos os dados mas não pode gerir utilizadores.",
+            "tecnico": "Acesso à dashboard completa.",
+            "admin": "Acesso total incluindo gestão de utilizadores."
+        }
+        st.info(role_info[new_role])
+        
+        if st.button("✅ Criar Utilizador", key="create_user_btn"):
+            if not new_name or not new_username or not new_password:
+                st.error("Preencha todos os campos.")
+            elif len(new_password) < 6:
+                st.error("A password deve ter pelo menos 6 caracteres.")
+            else:
+                try:
+                    conn = get_db()
+                    conn.execute("""
+                        INSERT INTO users (username, password_hash, name, role, active, created_at)
+                        VALUES (?, ?, ?, ?, 1, ?)
+                    """, (
+                        new_username.strip(),
+                        hash_password(new_password),
+                        new_name.strip(),
+                        new_role,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    ))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"✅ Utilizador '{new_username}' criado com sucesso!")
+                    st.rerun()
+                except sqlite3.IntegrityError:
+                    st.error(f"❌ O username '{new_username}' já existe.")
     
-    users = _load_users()
-    if username not in users or username == current_user.get("username"):
-        return False
-    
-    del users[username]
-    _save_users(users)
-    log_action(current_user.get("username", "system"), "DELETE_USER_SUCESSO", f"Utilizador {username} removido")
-    return True
+    # ── Tab 3: Alterar password ────────────────────────────
+    with tabs[2]:
+        st.markdown("### Alterar password de um utilizador")
+        conn = get_db()
+        usernames = [u["username"] for u in conn.execute("SELECT username FROM users").fetchall()]
+        conn.close()
+        
+        target_user = st.selectbox("Utilizador", usernames, key="change_user")
+        new_pass = st.text_input("Nova password", type="password", key="change_pass")
+        confirm_pass = st.text_input("Confirmar password", type="password", key="confirm_pass")
+        
+        if st.button("🔑 Alterar Password", key="change_pass_btn"):
+            if not new_pass or not confirm_pass:
+                st.error("Preencha os campos de password.")
+            elif new_pass != confirm_pass:
+                st.error("As passwords não coincidem.")
+            elif len(new_pass) < 6:
+                st.error("A password deve ter pelo menos 6 caracteres.")
+            else:
+                conn = get_db()
+                conn.execute("UPDATE users SET password_hash = ? WHERE username = ?",
+                             (hash_password(new_pass), target_user))
+                conn.commit()
+                conn.close()
+                st.success(f"✅ Password de '{target_user}' alterada com sucesso!")
