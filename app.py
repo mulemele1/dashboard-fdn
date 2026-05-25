@@ -1,122 +1,155 @@
 # app.py
-import streamlit as st
+import os
+from datetime import datetime
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
-import os
+import streamlit as st
 
 from auth import login_form, logout, admin_panel
 
-# Configuração da página (deve vir primeiro, antes de qualquer outro comando)
+# =========================================================
+# CONFIGURAÇÃO DA PÁGINA
+# =========================================================
 st.set_page_config(
-    page_title="FDN Dashboard - Progresso dos Levantamentos",
+    page_title="FDN Dashboard",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed"  # Sidebar começa recolhida
+    initial_sidebar_state="collapsed"
 )
 
-# ============================================
-# AUTENTICAÇÃO
-# ============================================
-if 'authenticated' not in st.session_state:
+# =========================================================
+# SESSION STATE
+# =========================================================
+if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
-# Se não estiver autenticado, mostra apenas o login (sem sidebar)
+if "user_name" not in st.session_state:
+    st.session_state.user_name = ""
+
+if "user_role" not in st.session_state:
+    st.session_state.user_role = ""
+
+# =========================================================
+# LOGIN
+# =========================================================
 if not st.session_state.authenticated:
-    # Esconder a sidebar completamente
+
     st.markdown("""
     <style>
         [data-testid="collapsedControl"] {
-            display: none;
+            display: none !important;
         }
+
         section[data-testid="stSidebar"] {
-            display: none;
+            display: none !important;
+        }
+
+        header {
+            display: none !important;
+        }
+
+        .main .block-container {
+            padding-top: 0rem;
         }
     </style>
     """, unsafe_allow_html=True)
-    
+
     login_form()
     st.stop()
 
-# Após login, mostrar a sidebar normalmente
-# Remover o estilo que esconde a sidebar
+# =========================================================
+# CSS GLOBAL
+# =========================================================
 st.markdown("""
 <style>
-    [data-testid="collapsedControl"] {
-        display: block;
-    }
-    section[data-testid="stSidebar"] {
-        display: block;
-    }
+
+.main-header {
+    background: linear-gradient(135deg, #1a5f7a 0%, #0d3b4a 100%);
+    padding: 1.5rem;
+    border-radius: 12px;
+    color: white;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    padding: 1rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    text-align: center;
+    border-top: 4px solid #1a5f7a;
+}
+
+.stat-number {
+    font-size: 2.1rem;
+    font-weight: bold;
+    color: #1a5f7a;
+}
+
+.stat-label {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.sidebar-user {
+    text-align: center;
+    padding: 1rem;
+    background: #f0f4f8;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+}
+
+.sidebar-role {
+    font-size: 0.75rem;
+    color: #1a5f7a;
+    background: #d9edf7;
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================
+# =========================================================
 # SIDEBAR
-# ============================================
+# =========================================================
 with st.sidebar:
+
     st.markdown(f"""
-    <div style="text-align:center; padding:1rem; background:#f0f4f8; border-radius:10px; margin-bottom:1rem;">
+    <div class="sidebar-user">
         <div style="font-size:2rem;">👤</div>
-        <strong>{st.session_state.user_name}</strong><br>
-        <span style="font-size:0.8rem; color:#1a5f7a; background:#e0f0f7; padding:2px 8px; border-radius:10px;">
+        <strong>{st.session_state.user_name}</strong><br><br>
+        <span class="sidebar-role">
             {st.session_state.user_role.upper()}
         </span>
     </div>
     """, unsafe_allow_html=True)
 
-    page = st.radio("Navegação", ["📊 Dashboard", "⚙️ Gestão de Utilizadores"]
-                    if st.session_state.user_role == "admin"
-                    else ["📊 Dashboard"])
+    if st.session_state.user_role == "admin":
+        page = st.radio(
+            "Navegação",
+            ["📊 Dashboard", "⚙️ Gestão de Utilizadores"]
+        )
+    else:
+        page = "📊 Dashboard"
 
     st.markdown("---")
+
     if st.button("🚪 Sair"):
         logout()
 
-# ============================================
-# PAINEL DE ADMIN
-# ============================================
+# =========================================================
+# ADMIN PANEL
+# =========================================================
 if page == "⚙️ Gestão de Utilizadores":
     admin_panel()
     st.stop()
 
-# ============================================
-# CSS DASHBOARD
-# ============================================
-st.markdown("""
-<style>
-    .main-header {
-        background: linear-gradient(135deg, #1a5f7a 0%, #0d3b4a 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        margin-bottom: 2rem;
-    }
-    .stat-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        text-align: center;
-        border-top: 4px solid #1a5f7a;
-    }
-    .stat-number {
-        font-size: 2.2rem;
-        font-weight: bold;
-        color: #1a5f7a;
-    }
-    .stat-label {
-        font-size: 0.85rem;
-        color: #666;
-        margin-top: 0.5rem;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================
+# =========================================================
 # CONFIGURAÇÕES
-# ============================================
+# =========================================================
 DATA_DIR = "data"
 
 DISTRICT_TARGETS = {
@@ -125,183 +158,394 @@ DISTRICT_TARGETS = {
     "Distrito de Lalaua": 80,
 }
 
-# ============================================
-# FUNÇÕES DE CARREGAMENTO
-# ============================================
+# =========================================================
+# FUNÇÕES
+# =========================================================
 @st.cache_data(ttl=300)
 def load_caf1():
-    file_path = os.path.join(DATA_DIR, "results-survey666877.csv")
+
+    file_path = os.path.join(
+        DATA_DIR,
+        "results-survey666877.csv"
+    )
+
     if not os.path.exists(file_path):
-        st.error(f"Ficheiro não encontrado: {file_path}")
         return pd.DataFrame()
-    df = pd.read_csv(file_path, encoding='utf-8')
-    df = df[df['Data de submissão'].notna()]
+
+    df = pd.read_csv(file_path, encoding="utf-8")
+
+    if "Data de submissão" in df.columns:
+        df = df[df["Data de submissão"].notna()]
+
     return df
 
-@st.cache_data(ttl=300)
-def load_caf2():
-    file_path = os.path.join(DATA_DIR, "results-survey163198.csv")
-    if not os.path.exists(file_path):
-        return pd.DataFrame()
-    df = pd.read_csv(file_path, encoding='utf-8')
-    df = df[df['Data de submissão'].notna()]
-    return df
 
 @st.cache_data(ttl=300)
 def load_maf():
-    file_path = os.path.join(DATA_DIR, "results-survey757779.csv")
+
+    file_path = os.path.join(
+        DATA_DIR,
+        "results-survey757779.csv"
+    )
+
     if not os.path.exists(file_path):
         return pd.DataFrame()
-    df = pd.read_csv(file_path, encoding='utf-8')
-    df = df[df['Date submitted'].notna()]
+
+    df = pd.read_csv(file_path, encoding="utf-8")
+
+    if "Date submitted" in df.columns:
+        df = df[df["Date submitted"].notna()]
+
     return df
+
 
 @st.cache_data(ttl=300)
 def get_daily_progress():
-    caf1 = load_caf1()
-    maf = load_maf()
-    if caf1.empty and maf.empty:
+
+    caf_df = load_caf1()
+    maf_df = load_maf()
+
+    if caf_df.empty and maf_df.empty:
         return pd.DataFrame()
-    caf1['date'] = pd.to_datetime(caf1['Data de submissão']).dt.date
-    maf['date'] = pd.to_datetime(maf['Date submitted']).dt.date
-    daily_caf = caf1.groupby('date').size().reset_index(name='caf')
-    daily_maf = maf.groupby('date').size().reset_index(name='maf')
-    all_dates = pd.concat([daily_caf['date'], daily_maf['date']]).unique()
-    result = pd.DataFrame({'date': sorted(all_dates)})
-    result = result.merge(daily_caf, on='date', how='left')
-    result = result.merge(daily_maf, on='date', how='left')
-    result['caf'] = result['caf'].fillna(0).astype(int)
-    result['maf'] = result['maf'].fillna(0).astype(int)
-    result['total'] = result['caf'] + result['maf']
+
+    result = pd.DataFrame()
+
+    if not caf_df.empty:
+        caf_df["date"] = pd.to_datetime(
+            caf_df["Data de submissão"]
+        ).dt.date
+
+        daily_caf = caf_df.groupby("date").size().reset_index(name="caf")
+        result = daily_caf.copy()
+
+    if not maf_df.empty:
+        maf_df["date"] = pd.to_datetime(
+            maf_df["Date submitted"]
+        ).dt.date
+
+        daily_maf = maf_df.groupby("date").size().reset_index(name="maf")
+
+        if result.empty:
+            result = daily_maf.copy()
+        else:
+            result = result.merge(
+                daily_maf,
+                on="date",
+                how="outer"
+            )
+
+    if "caf" not in result.columns:
+        result["caf"] = 0
+
+    if "maf" not in result.columns:
+        result["maf"] = 0
+
+    result = result.fillna(0)
+
+    result["caf"] = result["caf"].astype(int)
+    result["maf"] = result["maf"].astype(int)
+
+    result["total"] = result["caf"] + result["maf"]
+
+    result = result.sort_values("date")
+
     return result
+
 
 @st.cache_data(ttl=300)
 def get_district_progress():
+
     df = load_caf1()
+
     if df.empty:
         return pd.DataFrame()
+
     district_col = "Em que Distrito está a realizar o levantamento??"
+
+    if district_col not in df.columns:
+        return pd.DataFrame()
+
     achieved = df[district_col].value_counts().to_dict()
-    result = []
+
+    rows = []
+
     for district, target in DISTRICT_TARGETS.items():
-        result.append({
+
+        current = achieved.get(district, 0)
+
+        rows.append({
             "Distrito": district,
             "Previstos": target,
-            "Alcançados": achieved.get(district, 0),
-            "Percentual": (achieved.get(district, 0) / target * 100) if target > 0 else 0
+            "Alcançados": current,
+            "Percentual": (
+                current / target * 100
+            ) if target > 0 else 0
         })
-    return pd.DataFrame(result)
 
-# ============================================
-# HEADER
-# ============================================
-st.markdown("""
-<div class="main-header">
-    <h1>📊 FDN Dashboard - Progresso dos Levantamentos</h1>
-    <p>Monitorização de Chefes de Agregado e Membros | CAF + MAF</p>
-</div>
-""", unsafe_allow_html=True)
+    return pd.DataFrame(rows)
 
-# Carregar dados
+# =========================================================
+# CARREGAR DADOS
+# =========================================================
 caf1_df = load_caf1()
 maf_df = load_maf()
+
 daily_progress = get_daily_progress()
 district_df = get_district_progress()
 
+# =========================================================
+# HEADER
+# =========================================================
+st.markdown("""
+<div class="main-header">
+    <h1>📊 FDN Dashboard</h1>
+    <p>
+        Monitorização de Chefes de Agregado e
+        Membros | CAF + MAF
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# =========================================================
+# ERRO DE DADOS
+# =========================================================
 if caf1_df.empty:
-    st.error("❌ Não foi possível carregar os dados. Verifique se os ficheiros CSV estão na pasta 'data/'")
+
+    st.error("""
+    ❌ Não foi possível carregar os dados.
+
+    Verifique se os ficheiros CSV estão
+    dentro da pasta data/
+    """)
+
     st.stop()
 
-# ============================================
-# KPI CARDS
-# ============================================
+# =========================================================
+# KPIs
+# =========================================================
 total_heads = len(caf1_df)
 total_members = len(maf_df)
+
 total_target = sum(DISTRICT_TARGETS.values())
-percentage = (total_heads / total_target * 100) if total_target > 0 else 0
+
+percentage = (
+    total_heads / total_target * 100
+) if total_target > 0 else 0
+
+if "Nome do Inquirido?" in caf1_df.columns:
+    unique_inquirers = caf1_df["Nome do Inquirido?"].nunique()
+else:
+    unique_inquirers = 0
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.markdown(f'<div class="stat-card"><div class="stat-number">{total_heads}</div><div class="stat-label">Chefes de Agregado</div></div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-number">{total_heads}</div>
+        <div class="stat-label">
+            Chefes de Agregado
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with col2:
-    st.markdown(f'<div class="stat-card"><div class="stat-number">{total_members}</div><div class="stat-label">Membros do Agregado</div></div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-number">{total_members}</div>
+        <div class="stat-label">
+            Membros do Agregado
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with col3:
-    st.markdown(f'<div class="stat-card"><div class="stat-number">{percentage:.1f}%</div><div class="stat-label">Progresso Geral</div></div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-number">{percentage:.1f}%</div>
+        <div class="stat-label">
+            Progresso Geral
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 with col4:
-    unique_inquirers = caf1_df['Nome do Inquirido?'].nunique()
-    st.markdown(f'<div class="stat-card"><div class="stat-number">{unique_inquirers}</div><div class="stat-label">Técnicos Activos</div></div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-number">{unique_inquirers}</div>
+        <div class="stat-label">
+            Técnicos Activos
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.markdown("---")
 
-# ============================================
-# GRÁFICO 1: Levantamentos Diários
-# ============================================
+# =========================================================
+# GRÁFICO DIÁRIO
+# =========================================================
 st.subheader("📈 Levantamentos Diários")
 
 if not daily_progress.empty:
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=daily_progress['date'], y=daily_progress['caf'], name='CAF', marker_color='#1a5f7a'))
-    fig.add_trace(go.Bar(x=daily_progress['date'], y=daily_progress['maf'], name='MAF', marker_color='#4aa3c2'))
-    fig.update_layout(barmode='group', xaxis_title="Data", yaxis_title="Número de Questionários", height=400)
-    st.plotly_chart(fig)
-else:
-    st.info("Sem dados diários disponíveis")
 
-# ============================================
-# GRÁFICO 2: Por Técnico
-# ============================================
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=daily_progress["date"],
+            y=daily_progress["caf"],
+            name="CAF"
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            x=daily_progress["date"],
+            y=daily_progress["maf"],
+            name="MAF"
+        )
+    )
+
+    fig.update_layout(
+        barmode="group",
+        height=400,
+        xaxis_title="Data",
+        yaxis_title="Questionários"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+else:
+    st.info("Sem dados diários disponíveis.")
+
+# =========================================================
+# TÉCNICOS
+# =========================================================
 st.subheader("👥 Inquéritos por Técnico")
 
-tech_counts = caf1_df['Nome do Inquirido?'].value_counts().reset_index()
-tech_counts.columns = ['Técnico', 'Total']
+if "Nome do Inquirido?" in caf1_df.columns:
 
-if not tech_counts.empty:
-    fig = px.bar(tech_counts, x='Técnico', y='Total', title="Total de CAFs por Técnico",
-                 color='Total', color_continuous_scale='Blues', text='Total')
-    fig.update_traces(textposition='outside')
-    st.plotly_chart(fig)
+    tech_counts = (
+        caf1_df["Nome do Inquirido?"]
+        .value_counts()
+        .reset_index()
+    )
 
-# ============================================
-# GRÁFICO 3: Distritos
-# ============================================
+    tech_counts.columns = ["Técnico", "Total"]
+
+    fig = px.bar(
+        tech_counts,
+        x="Técnico",
+        y="Total",
+        text="Total",
+        color="Total"
+    )
+
+    fig.update_traces(textposition="outside")
+
+    st.plotly_chart(fig, use_container_width=True)
+
+# =========================================================
+# DISTRITOS
+# =========================================================
 st.subheader("🗺️ Progresso por Distrito")
 
 if not district_df.empty:
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=district_df['Distrito'], y=district_df['Previstos'], name='Previstos', marker_color='lightgray'))
-    fig.add_trace(go.Bar(x=district_df['Distrito'], y=district_df['Alcançados'], name='Alcançados', marker_color='#1a5f7a'))
-    fig.update_layout(barmode='group', xaxis_title="Distrito", yaxis_title="Número de Chefes de Agregado", height=400)
-    st.plotly_chart(fig)
-    st.dataframe(district_df.style.format({'Percentual': '{:.1f}%'}))
 
-# ============================================
-# GRÁFICO 4: Sexo
-# ============================================
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=district_df["Distrito"],
+        y=district_df["Previstos"],
+        name="Previstos"
+    ))
+
+    fig.add_trace(go.Bar(
+        x=district_df["Distrito"],
+        y=district_df["Alcançados"],
+        name="Alcançados"
+    ))
+
+    fig.update_layout(
+        barmode="group",
+        height=400
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.dataframe(
+        district_df.style.format({
+            "Percentual": "{:.1f}%"
+        })
+    )
+
+# =========================================================
+# SEXO
+# =========================================================
 st.subheader("👤 Sexo dos Chefes de Agregado")
 
 gender_col = "Sexo do chefe de agregado"
-if gender_col in caf1_df.columns:
-    gender_counts = caf1_df[gender_col].value_counts().reset_index()
-    gender_counts.columns = ['Sexo', 'Total']
-    fig = px.pie(gender_counts, values='Total', names='Sexo', title="Distribuição por Sexo",
-                 color_discrete_sequence=['#1a5f7a', '#4aa3c2'])
-    st.plotly_chart(fig)
 
-# ============================================
+if gender_col in caf1_df.columns:
+
+    gender_counts = (
+        caf1_df[gender_col]
+        .value_counts()
+        .reset_index()
+    )
+
+    gender_counts.columns = ["Sexo", "Total"]
+
+    fig = px.pie(
+        gender_counts,
+        values="Total",
+        names="Sexo"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+# =========================================================
 # TABELA
-# ============================================
+# =========================================================
 st.subheader("📋 Últimas Submissões")
 
-if not caf1_df.empty:
-    display_df = caf1_df[['Data de submissão', 'Nome do Inquirido?',
-                           'Qual é o nome do Chefe do Agregado Familiar?',
-                           'Em que Distrito está a realizar o levantamento??']].copy()
-    display_df.columns = ['Data', 'Técnico', 'Chefe do Agregado', 'Distrito']
-    st.dataframe(display_df.head(20))
+required_cols = [
+    "Data de submissão",
+    "Nome do Inquirido?",
+    "Qual é o nome do Chefe do Agregado Familiar?",
+    "Em que Distrito está a realizar o levantamento??"
+]
 
-# ============================================
-# RODAPÉ
-# ============================================
+valid_cols = [
+    c for c in required_cols
+    if c in caf1_df.columns
+]
+
+if valid_cols:
+
+    display_df = caf1_df[valid_cols].copy()
+
+    rename_map = {
+        "Data de submissão": "Data",
+        "Nome do Inquirido?": "Técnico",
+        "Qual é o nome do Chefe do Agregado Familiar?": "Chefe do Agregado",
+        "Em que Distrito está a realizar o levantamento??": "Distrito"
+    }
+
+    display_df = display_df.rename(columns=rename_map)
+
+    st.dataframe(
+        display_df.head(20),
+        use_container_width=True
+    )
+
+# =========================================================
+# FOOTER
+# =========================================================
 st.markdown("---")
-st.caption(f"FDN Dashboard | Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+
+st.caption(
+    "FDN Dashboard | Última actualização: {}".format(
+        datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    )
+)
