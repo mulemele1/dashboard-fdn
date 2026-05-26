@@ -1,0 +1,12 @@
+import subprocess
+import sys
+import os
+
+# Caminho para o streamlit dentro do venv
+STREAMLIT = os.path.join(os.path.dirname(__file__), 'venv', 'bin', 'streamlit')
+APP = os.path.join(os.path.dirname(__file__), 'app.py')
+PORT = 8501
+
+def application(environ, start_response):
+    start_response('200 OK', [('Content-Type', 'text/html')])
+    return [b"<meta http-equiv='refresh' content='0; url=http://localhost:8501'>"]
